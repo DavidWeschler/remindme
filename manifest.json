@@ -2,7 +2,7 @@
   "name": "RemindMe",
   "short_name": "RemindMe",
   "description": "A personal reminder & notification scheduler",
-  "start_url": "/index.html",
+  "start_url": "/remindme/index.html",
   "display": "standalone",
   "background_color": "#0d0c08",
   "theme_color": "#0d0c08",
