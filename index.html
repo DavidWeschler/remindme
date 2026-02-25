@@ -1,0 +1,765 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <title>RemindMe</title>
+  <link rel="manifest" href="manifest.json" />
+  <meta name="theme-color" content="#0d0c08" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Bebas+Neue&family=Barlow:wght@300;400;600;700&display=swap" rel="stylesheet" />
+  <style>
+    :root {
+      --bg:       #0d0c08;
+      --bg2:      #111009;
+      --surface:  #171510;
+      --surface2: #1f1c13;
+      --surface3: #252118;
+      --border:   #2e2a1a;
+      --border2:  #3d3820;
+
+      --gold:     #e8b84b;
+      --gold2:    #f5cc6a;
+      --gold-dim: #7a6120;
+      --amber:    #c47c1a;
+      --amber-glow: rgba(232, 184, 75, 0.15);
+
+      --text:     #f0ead6;
+      --text2:    #b8ad8a;
+      --muted:    #5a5438;
+      --danger:   #c44b4b;
+      --success:  #7ab87a;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    html { height: 100%; }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: 'Barlow', sans-serif;
+      min-height: 100dvh;
+      display: flex;
+      flex-direction: column;
+      overflow-x: hidden;
+      position: relative;
+    }
+
+    /* Noise texture overlay */
+    body::before {
+      content: '';
+      position: fixed;
+      inset: 0;
+      background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)' opacity='1'/%3E%3C/svg%3E");
+      opacity: 0.035;
+      pointer-events: none;
+      z-index: 1;
+    }
+
+    /* Warm amber glow top */
+    body::after {
+      content: '';
+      position: fixed;
+      width: 500px; height: 300px;
+      background: radial-gradient(ellipse, rgba(232,184,75,0.07) 0%, transparent 70%);
+      top: -80px; left: 50%;
+      transform: translateX(-50%);
+      pointer-events: none;
+      z-index: 0;
+    }
+
+    .app {
+      position: relative;
+      z-index: 2;
+      display: flex;
+      flex-direction: column;
+      min-height: 100dvh;
+    }
+
+    /* ── HEADER ── */
+    header {
+      padding: 18px 22px 14px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      border-bottom: 1px solid var(--border2);
+      background: rgba(13,12,8,0.9);
+      backdrop-filter: blur(16px);
+      position: sticky; top: 0; z-index: 10;
+    }
+
+    .logo {
+      font-family: 'Bebas Neue', cursive;
+      font-size: 28px;
+      letter-spacing: 3px;
+      color: var(--gold);
+      text-shadow: 0 0 30px rgba(232,184,75,0.4);
+    }
+
+    .logo em {
+      color: var(--text2);
+      font-style: normal;
+      font-size: 20px;
+      letter-spacing: 1px;
+    }
+
+    .header-right {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .live-dot {
+      width: 8px; height: 8px;
+      background: var(--gold);
+      border-radius: 50%;
+      box-shadow: 0 0 10px var(--gold), 0 0 20px rgba(232,184,75,0.4);
+      animation: throb 2.5s ease-in-out infinite;
+    }
+
+    @keyframes throb {
+      0%, 100% { transform: scale(1); opacity: 1; }
+      50% { transform: scale(0.7); opacity: 0.5; }
+    }
+
+    .time-display {
+      font-family: 'Space Mono', monospace;
+      font-size: 11px;
+      color: var(--muted);
+      letter-spacing: 1px;
+    }
+
+    /* ── PERMISSION BANNER ── */
+    #permission-banner {
+      margin: 14px 14px 0;
+      padding: 12px 16px;
+      background: rgba(232,184,75,0.07);
+      border: 1px solid var(--gold-dim);
+      border-left: 3px solid var(--gold);
+      border-radius: 8px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-size: 12px;
+      color: var(--text2);
+    }
+
+    #permission-banner.hidden { display: none; }
+
+    #permission-banner button {
+      margin-left: auto;
+      padding: 6px 14px;
+      background: var(--gold);
+      border: none;
+      border-radius: 6px;
+      color: #0d0c08;
+      font-family: 'Barlow', sans-serif;
+      font-weight: 700;
+      font-size: 11px;
+      cursor: pointer;
+      letter-spacing: 0.5px;
+      white-space: nowrap;
+      text-transform: uppercase;
+    }
+
+    /* ── FORM ── */
+    .form-card {
+      margin: 14px;
+      background: var(--surface);
+      border: 1px solid var(--border2);
+      border-radius: 14px;
+      padding: 20px;
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+      position: relative;
+      overflow: hidden;
+    }
+
+    /* Subtle left accent bar */
+    .form-card::before {
+      content: '';
+      position: absolute;
+      left: 0; top: 0; bottom: 0;
+      width: 3px;
+      background: linear-gradient(to bottom, var(--gold), var(--amber), transparent);
+      border-radius: 3px 0 0 3px;
+    }
+
+    .form-title {
+      font-family: 'Space Mono', monospace;
+      font-size: 10px;
+      font-weight: 700;
+      color: var(--gold);
+      text-transform: uppercase;
+      letter-spacing: 3px;
+      opacity: 0.8;
+    }
+
+    .input-group { display: flex; flex-direction: column; gap: 6px; }
+
+    label {
+      font-family: 'Space Mono', monospace;
+      font-size: 9px;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 2px;
+    }
+
+    input[type="text"],
+    input[type="datetime-local"],
+    textarea {
+      background: var(--surface2);
+      border: 1px solid var(--border2);
+      border-radius: 8px;
+      color: var(--text);
+      font-family: 'Barlow', sans-serif;
+      font-size: 15px;
+      font-weight: 400;
+      padding: 11px 14px;
+      width: 100%;
+      outline: none;
+      transition: border-color 0.2s, box-shadow 0.2s;
+      -webkit-appearance: none;
+      caret-color: var(--gold);
+    }
+
+    input::placeholder, textarea::placeholder {
+      color: var(--muted);
+      opacity: 0.7;
+    }
+
+    input:focus, textarea:focus {
+      border-color: var(--gold-dim);
+      box-shadow: 0 0 0 3px rgba(232,184,75,0.08), inset 0 1px 3px rgba(0,0,0,0.3);
+    }
+
+    /* datetime-local color fix */
+    input[type="datetime-local"]::-webkit-calendar-picker-indicator {
+      filter: invert(0.7) sepia(1) saturate(2) hue-rotate(5deg);
+      opacity: 0.6;
+    }
+
+    textarea { resize: none; height: 72px; }
+
+    /* ── EMOJI ROW ── */
+    .emoji-row {
+      display: flex;
+      gap: 6px;
+      flex-wrap: wrap;
+    }
+
+    .emoji-btn {
+      width: 38px; height: 38px;
+      background: var(--surface2);
+      border: 1px solid var(--border2);
+      border-radius: 8px;
+      font-size: 19px;
+      cursor: pointer;
+      display: flex; align-items: center; justify-content: center;
+      transition: all 0.15s;
+      -webkit-tap-highlight-color: transparent;
+    }
+
+    .emoji-btn.selected {
+      border-color: var(--gold);
+      background: rgba(232,184,75,0.12);
+      box-shadow: 0 0 10px rgba(232,184,75,0.2);
+    }
+
+    .emoji-btn:active { transform: scale(0.9); }
+
+    /* ── ADD BUTTON ── */
+    .add-btn {
+      padding: 13px;
+      background: var(--gold);
+      border: none;
+      border-radius: 10px;
+      color: #0d0c08;
+      font-family: 'Barlow', sans-serif;
+      font-weight: 700;
+      font-size: 14px;
+      cursor: pointer;
+      letter-spacing: 1.5px;
+      text-transform: uppercase;
+      box-shadow: 0 4px 24px rgba(232,184,75,0.25), 0 1px 0 rgba(255,255,255,0.1) inset;
+      transition: all 0.18s;
+      -webkit-tap-highlight-color: transparent;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .add-btn::after {
+      content: '';
+      position: absolute;
+      inset: 0;
+      background: linear-gradient(to bottom, rgba(255,255,255,0.08) 0%, transparent 60%);
+    }
+
+    .add-btn:active {
+      transform: scale(0.97);
+      box-shadow: 0 2px 10px rgba(232,184,75,0.15);
+    }
+
+    /* ── SECTION HEADER ── */
+    .section-header {
+      padding: 10px 18px 6px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .section-label {
+      font-family: 'Space Mono', monospace;
+      font-size: 9px;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 3px;
+    }
+
+    /* Divider line */
+    .section-header::after {
+      content: '';
+      flex: 1;
+      height: 1px;
+      background: linear-gradient(to right, var(--border2), transparent);
+    }
+
+    .count-badge {
+      background: var(--surface2);
+      border: 1px solid var(--border2);
+      border-radius: 20px;
+      padding: 2px 10px;
+      font-family: 'Space Mono', monospace;
+      font-size: 10px;
+      color: var(--gold);
+    }
+
+    /* ── REMINDER LIST ── */
+    #reminder-list {
+      padding: 6px 14px 28px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      flex: 1;
+    }
+
+    .empty-state {
+      text-align: center;
+      padding: 48px 20px;
+      color: var(--muted);
+    }
+
+    .empty-state .big-emoji {
+      font-size: 44px;
+      margin-bottom: 14px;
+      filter: grayscale(0.3);
+    }
+
+    .empty-state p {
+      font-size: 13px;
+      color: var(--muted);
+      line-height: 1.6;
+      font-family: 'Space Mono', monospace;
+    }
+
+    /* ── REMINDER CARD ── */
+    .reminder-card {
+      background: var(--surface);
+      border: 1px solid var(--border2);
+      border-radius: 12px;
+      padding: 14px;
+      display: flex;
+      gap: 12px;
+      align-items: flex-start;
+      animation: cardIn 0.35s cubic-bezier(0.34, 1.56, 0.64, 1);
+      position: relative;
+      overflow: hidden;
+      transition: opacity 0.4s, border-color 0.3s;
+    }
+
+    /* Glow line at top of active cards */
+    .reminder-card:not(.fired)::before {
+      content: '';
+      position: absolute;
+      top: 0; left: 16px; right: 16px;
+      height: 1px;
+      background: linear-gradient(to right, transparent, var(--gold-dim), transparent);
+    }
+
+    @keyframes cardIn {
+      from { opacity: 0; transform: translateY(10px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    .reminder-card.fired {
+      opacity: 0.35;
+      border-style: dashed;
+      border-color: var(--border);
+    }
+
+    .reminder-card.fired::before { display: none; }
+
+    .r-emoji {
+      font-size: 24px;
+      flex-shrink: 0;
+      width: 42px; height: 42px;
+      background: var(--surface2);
+      border: 1px solid var(--border2);
+      border-radius: 10px;
+      display: flex; align-items: center; justify-content: center;
+    }
+
+    .reminder-card:not(.fired) .r-emoji {
+      box-shadow: 0 0 16px rgba(232,184,75,0.08);
+    }
+
+    .r-body { flex: 1; min-width: 0; }
+
+    .r-title {
+      font-size: 15px;
+      font-weight: 600;
+      color: var(--text);
+      margin-bottom: 3px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .r-note {
+      font-size: 12px;
+      color: var(--text2);
+      margin-bottom: 8px;
+      line-height: 1.4;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      display: -webkit-box;
+      -webkit-line-clamp: 2;
+      -webkit-box-orient: vertical;
+    }
+
+    .r-time {
+      font-family: 'Space Mono', monospace;
+      font-size: 10px;
+      color: var(--gold);
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      flex-wrap: wrap;
+    }
+
+    .r-time.past { color: var(--muted); }
+
+    .countdown {
+      background: rgba(232,184,75,0.1);
+      border: 1px solid var(--gold-dim);
+      border-radius: 4px;
+      padding: 1px 7px;
+      font-size: 9px;
+      color: var(--gold2);
+      letter-spacing: 0.5px;
+    }
+
+    .reminder-card.fired .countdown {
+      background: transparent;
+      border-color: var(--border);
+      color: var(--muted);
+    }
+
+    .delete-btn {
+      background: none;
+      border: none;
+      color: var(--muted);
+      cursor: pointer;
+      font-size: 14px;
+      padding: 4px 6px;
+      border-radius: 6px;
+      transition: color 0.2s, background 0.2s;
+      -webkit-tap-highlight-color: transparent;
+      flex-shrink: 0;
+      line-height: 1;
+    }
+
+    .delete-btn:active {
+      color: var(--danger);
+      background: rgba(196,75,75,0.1);
+    }
+
+    /* ── TOAST ── */
+    #toast {
+      position: fixed;
+      bottom: 28px;
+      left: 50%;
+      transform: translateX(-50%) translateY(120px);
+      background: var(--surface3);
+      border: 1px solid var(--border2);
+      border-left: 3px solid var(--gold);
+      border-radius: 10px;
+      padding: 11px 18px;
+      font-family: 'Space Mono', monospace;
+      font-size: 11px;
+      color: var(--text);
+      box-shadow: 0 8px 32px rgba(0,0,0,0.5), 0 0 0 1px rgba(232,184,75,0.05);
+      transition: transform 0.35s cubic-bezier(0.34, 1.56, 0.64, 1);
+      z-index: 100;
+      white-space: nowrap;
+      letter-spacing: 0.5px;
+    }
+
+    #toast.show { transform: translateX(-50%) translateY(0); }
+  </style>
+</head>
+<body>
+<div class="app">
+  <header>
+    <div class="logo">REMIND<em>ME</em></div>
+    <div class="header-right">
+      <span class="time-display" id="clock">--:--</span>
+      <div class="live-dot"></div>
+    </div>
+  </header>
+
+  <!-- Permission Banner -->
+  <div id="permission-banner">
+    <span>⚡</span>
+    <span>Enable notifications to receive reminders</span>
+    <button onclick="requestPermission()">Enable</button>
+  </div>
+
+  <!-- Add Reminder Form -->
+  <div class="form-card">
+    <div class="form-title">// New Reminder</div>
+
+    <div class="input-group">
+      <label>Title</label>
+      <input type="text" id="r-title" placeholder="e.g. Take medication" maxlength="60" />
+    </div>
+
+    <div class="input-group">
+      <label>Note (optional)</label>
+      <textarea id="r-note" placeholder="Additional details..."></textarea>
+    </div>
+
+    <div class="input-group">
+      <label>When</label>
+      <input type="datetime-local" id="r-time" />
+    </div>
+
+    <div class="input-group">
+      <label>Icon</label>
+      <div class="emoji-row" id="emoji-row">
+        <button class="emoji-btn selected" data-emoji="🔔">🔔</button>
+        <button class="emoji-btn" data-emoji="💊">💊</button>
+        <button class="emoji-btn" data-emoji="📞">📞</button>
+        <button class="emoji-btn" data-emoji="🏃">🏃</button>
+        <button class="emoji-btn" data-emoji="🍽️">🍽️</button>
+        <button class="emoji-btn" data-emoji="💧">💧</button>
+        <button class="emoji-btn" data-emoji="📚">📚</button>
+        <button class="emoji-btn" data-emoji="💰">💰</button>
+        <button class="emoji-btn" data-emoji="🛒">🛒</button>
+        <button class="emoji-btn" data-emoji="😴">😴</button>
+      </div>
+    </div>
+
+    <button class="add-btn" onclick="addReminder()">⟶ Set Reminder</button>
+  </div>
+
+  <!-- Reminders List -->
+  <div class="section-header">
+    <span class="section-label">Scheduled</span>
+    <span class="count-badge" id="count-badge">0</span>
+  </div>
+
+  <div id="reminder-list">
+    <div class="empty-state">
+      <div class="big-emoji">🕯️</div>
+      <p>No reminders yet.<br/>Add one above.</p>
+    </div>
+  </div>
+</div>
+
+<div id="toast"></div>
+
+<script>
+  // ── State ──────────────────────────────────────────────
+  let reminders = JSON.parse(localStorage.getItem('reminders') || '[]');
+  let selectedEmoji = '🔔';
+  let timers = {};
+
+  // ── Init ───────────────────────────────────────────────
+  (function init() {
+    const d = new Date(Date.now() + 10 * 60 * 1000);
+    d.setSeconds(0, 0);
+    document.getElementById('r-time').value = d.toISOString().slice(0, 16);
+
+    if (Notification.permission === 'granted') {
+      document.getElementById('permission-banner').classList.add('hidden');
+    }
+
+    document.getElementById('emoji-row').addEventListener('click', e => {
+      const btn = e.target.closest('.emoji-btn');
+      if (!btn) return;
+      document.querySelectorAll('.emoji-btn').forEach(b => b.classList.remove('selected'));
+      btn.classList.add('selected');
+      selectedEmoji = btn.dataset.emoji;
+    });
+
+    // Live clock
+    function updateClock() {
+      const now = new Date();
+      document.getElementById('clock').textContent =
+        now.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
+    }
+    updateClock();
+    setInterval(updateClock, 10000);
+
+    renderList();
+    scheduleAll();
+    setInterval(updateCountdowns, 30000);
+  })();
+
+  // ── Notification Permission ────────────────────────────
+  async function requestPermission() {
+    const result = await Notification.requestPermission();
+    if (result === 'granted') {
+      document.getElementById('permission-banner').classList.add('hidden');
+      showToast('✓ Notifications enabled');
+    } else {
+      showToast('✕ Permission denied');
+    }
+  }
+
+  // ── Add Reminder ───────────────────────────────────────
+  function addReminder() {
+    const title = document.getElementById('r-title').value.trim();
+    const note = document.getElementById('r-note').value.trim();
+    const timeVal = document.getElementById('r-time').value;
+
+    if (!title) { showToast('⚠ Enter a title'); return; }
+    if (!timeVal) { showToast('⚠ Pick a time'); return; }
+
+    const scheduled = new Date(timeVal).getTime();
+    if (scheduled <= Date.now()) { showToast('⚠ Must be in the future'); return; }
+
+    const reminder = { id: Date.now().toString(), title, note, emoji: selectedEmoji, scheduled, fired: false };
+    reminders.unshift(reminder);
+    save();
+    scheduleOne(reminder);
+    renderList();
+    showToast('✓ Reminder set');
+
+    document.getElementById('r-title').value = '';
+    document.getElementById('r-note').value = '';
+    const next = new Date(Date.now() + 10 * 60 * 1000);
+    next.setSeconds(0, 0);
+    document.getElementById('r-time').value = next.toISOString().slice(0, 16);
+  }
+
+  // ── Delete ─────────────────────────────────────────────
+  function deleteReminder(id) {
+    clearTimeout(timers[id]);
+    delete timers[id];
+    reminders = reminders.filter(r => r.id !== id);
+    save();
+    renderList();
+    showToast('✕ Removed');
+  }
+
+  // ── Scheduling ─────────────────────────────────────────
+  function scheduleAll() {
+    reminders.forEach(r => { if (!r.fired) scheduleOne(r); });
+  }
+
+  function scheduleOne(r) {
+    const delay = r.scheduled - Date.now();
+    if (delay <= 0 || delay > 2147483647) return;
+    timers[r.id] = setTimeout(() => fireNotification(r), delay);
+  }
+
+  function fireNotification(r) {
+    if (Notification.permission === 'granted') {
+      new Notification(r.emoji + ' ' + r.title, {
+        body: r.note || 'RemindMe',
+        icon: 'icons/icon-192.png',
+        badge: 'icons/icon-192.png',
+        vibrate: [200, 100, 200],
+        tag: r.id
+      });
+    }
+    const idx = reminders.findIndex(x => x.id === r.id);
+    if (idx > -1) { reminders[idx].fired = true; save(); renderList(); }
+  }
+
+  // ── Render ─────────────────────────────────────────────
+  function renderList() {
+    const list = document.getElementById('reminder-list');
+    const upcoming = reminders.filter(r => !r.fired);
+    const fired = reminders.filter(r => r.fired);
+    const all = [...upcoming, ...fired];
+
+    document.getElementById('count-badge').textContent = upcoming.length;
+
+    if (all.length === 0) {
+      list.innerHTML = `<div class="empty-state"><div class="big-emoji">🕯️</div><p>No reminders yet.<br/>Add one above.</p></div>`;
+      return;
+    }
+
+    list.innerHTML = all.map(r => {
+      const d = new Date(r.scheduled);
+      const dateStr = d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
+      const timeStr = d.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
+      const countdown = r.fired ? '✓ done' : getCountdown(r.scheduled);
+
+      return `<div class="reminder-card ${r.fired ? 'fired' : ''}" id="card-${r.id}">
+        <div class="r-emoji">${r.emoji}</div>
+        <div class="r-body">
+          <div class="r-title">${escapeHtml(r.title)}</div>
+          ${r.note ? `<div class="r-note">${escapeHtml(r.note)}</div>` : ''}
+          <div class="r-time ${r.fired ? 'past' : ''}">
+            ${dateStr} · ${timeStr}
+            <span class="countdown">${countdown}</span>
+          </div>
+        </div>
+        <button class="delete-btn" onclick="deleteReminder('${r.id}')">✕</button>
+      </div>`;
+    }).join('');
+  }
+
+  function updateCountdowns() {
+    reminders.forEach(r => {
+      if (r.fired) return;
+      const span = document.querySelector(`#card-${r.id} .countdown`);
+      if (span) span.textContent = getCountdown(r.scheduled);
+    });
+  }
+
+  function getCountdown(ts) {
+    const diff = ts - Date.now();
+    if (diff <= 0) return 'now';
+    const m = Math.floor(diff / 60000);
+    const h = Math.floor(m / 60);
+    const d = Math.floor(h / 24);
+    if (d > 0) return `${d}d ${h % 24}h`;
+    if (h > 0) return `${h}h ${m % 60}m`;
+    return `${m}m`;
+  }
+
+  // ── Helpers ────────────────────────────────────────────
+  function save() { localStorage.setItem('reminders', JSON.stringify(reminders)); }
+  function escapeHtml(s) { return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+
+  function showToast(msg) {
+    const t = document.getElementById('toast');
+    t.textContent = msg;
+    t.classList.add('show');
+    setTimeout(() => t.classList.remove('show'), 2600);
+  }
+
+  if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
+</script>
+</body>
+</html>
