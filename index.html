@@ -1,30 +1,286 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <title>RemindMe</title>
+
+  <!-- PWA Manifest -->
+  <link rel="manifest" href="/manifest.json" />
+  <meta name="theme-color" content="#0d0c08" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="RemindMe" />
+  <link rel="apple-touch-icon" href="/icons/icon-192.png" />
+
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Bebas+Neue&family=Barlow:wght@300;400;600;700&display=swap" rel="stylesheet" />
+
+  <style>
+    /* Keep all your existing styles here */
+    /* ...existing CSS from your previous HTML... */
+  </style>
+</head>
+<body>
+<div class="app">
+  <header>
+    <div class="logo">REMIND<em>ME</em></div>
+    <div class="header-right">
+      <span class="time-display" id="clock">--:--</span>
+      <div class="live-dot"></div>
+    </div>
+  </header>
+
+  <!-- Permission Banner -->
+  <div id="permission-banner">
+    <span>⚡</span>
+    <span>Enable notifications to receive reminders</span>
+    <button onclick="requestPermission()">Enable</button>
+  </div>
+
+  <!-- Add Reminder Form -->
+  <div class="form-card">
+    <div class="form-title">// New Reminder</div>
+
+    <div class="input-group">
+      <label>Title</label>
+      <input type="text" id="r-title" placeholder="e.g. Take medication" maxlength="60" />
+    </div>
+
+    <div class="input-group">
+      <label>Note (optional)</label>
+      <textarea id="r-note" placeholder="Additional details..."></textarea>
+    </div>
+
+    <div class="input-group">
+      <label>When</label>
+      <input type="datetime-local" id="r-time" />
+    </div>
+
+    <div class="input-group">
+      <label>Icon</label>
+      <div class="emoji-row" id="emoji-row">
+        <button class="emoji-btn selected" data-emoji="🔔">🔔</button>
+        <button class="emoji-btn" data-emoji="💊">💊</button>
+        <button class="emoji-btn" data-emoji="📞">📞</button>
+        <button class="emoji-btn" data-emoji="🏃">🏃</button>
+        <button class="emoji-btn" data-emoji="🍽️">🍽️</button>
+        <button class="emoji-btn" data-emoji="💧">💧</button>
+        <button class="emoji-btn" data-emoji="📚">📚</button>
+        <button class="emoji-btn" data-emoji="💰">💰</button>
+        <button class="emoji-btn" data-emoji="🛒">🛒</button>
+        <button class="emoji-btn" data-emoji="😴">😴</button>
+      </div>
+    </div>
+
+    <button class="add-btn" onclick="addReminder()">⟶ Set Reminder</button>
+  </div>
+
+  <!-- Reminders List -->
+  <div class="section-header">
+    <span class="section-label">Scheduled</span>
+    <span class="count-badge" id="count-badge">0</span>
+  </div>
+
+  <div id="reminder-list">
+    <div class="empty-state">
+      <div class="big-emoji">🕯️</div>
+      <p>No reminders yet.<br/>Add one above.</p>
+    </div>
+  </div>
+</div>
+
+<div id="toast"></div>
+
 <script>
-  // Register service worker
-  if ('serviceWorker' in navigator) {
-    navigator.serviceWorker.register('/sw.js')
-      .then(() => console.log('Service Worker registered'));
-  }
+  // ── State ──────────────────────────────────────────────
+  let reminders = JSON.parse(localStorage.getItem('reminders') || '[]');
+  let selectedEmoji = '🔔';
+  let timers = {};
 
-  // Request notification permission
-  async function askNotificationPermission() {
-    const permission = await Notification.requestPermission();
-    if (permission !== 'granted') {
-      alert('Please allow notifications to receive reminders!');
+  // ── Init ───────────────────────────────────────────────
+  (function init() {
+    const d = new Date(Date.now() + 10 * 60 * 1000);
+    d.setSeconds(0, 0);
+    document.getElementById('r-time').value = d.toISOString().slice(0, 16);
+
+    if (Notification.permission === 'granted') {
+      document.getElementById('permission-banner').classList.add('hidden');
     }
-  }
 
-  askNotificationPermission();
+    document.getElementById('emoji-row').addEventListener('click', e => {
+      const btn = e.target.closest('.emoji-btn');
+      if (!btn) return;
+      document.querySelectorAll('.emoji-btn').forEach(b => b.classList.remove('selected'));
+      btn.classList.add('selected');
+      selectedEmoji = btn.dataset.emoji;
+    });
 
-  // Example: trigger notification manually while app is open
-  function testNotification() {
+    // Live clock
+    function updateClock() {
+      const now = new Date();
+      document.getElementById('clock').textContent =
+        now.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
+    }
+    updateClock();
+    setInterval(updateClock, 10000);
+
+    renderList();
+    scheduleAll();
+    setInterval(updateCountdowns, 30000);
+
+    // ── Service Worker Registration ──
     if ('serviceWorker' in navigator) {
-      navigator.serviceWorker.ready.then(reg => {
-        reg.showNotification('Test Reminder', {
-          body: 'This is a test notification.',
-          icon: '/icons/icon-192.png'
-        });
-      });
+      navigator.serviceWorker.register('/sw.js').then(() => {
+        console.log('Service Worker registered');
+      }).catch(err => console.error('SW failed:', err));
     }
+
+    // ── Ask notification permission on load ──
+    if (Notification.permission !== 'granted') requestPermission();
+  })();
+
+  // ── Notification Permission ────────────────────────────
+  async function requestPermission() {
+    const result = await Notification.requestPermission();
+    if (result === 'granted') {
+      document.getElementById('permission-banner').classList.add('hidden');
+      showToast('✓ Notifications enabled');
+    } else {
+      showToast('✕ Permission denied');
+    }
+  }
+
+  // ── Show Notification ─────────────────────────────────
+  async function showNotification(title, body) {
+    if (!('serviceWorker' in navigator)) return;
+    const reg = await navigator.serviceWorker.ready;
+    reg.showNotification(title, {
+      body,
+      icon: '/icons/icon-192.png',
+      badge: '/icons/icon-192.png',
+      vibrate: [200, 100, 200]
+    });
+  }
+
+  // ── Add Reminder ───────────────────────────────────────
+  function addReminder() {
+    const title = document.getElementById('r-title').value.trim();
+    const note = document.getElementById('r-note').value.trim();
+    const timeVal = document.getElementById('r-time').value;
+
+    if (!title) { showToast('⚠ Enter a title'); return; }
+    if (!timeVal) { showToast('⚠ Pick a time'); return; }
+
+    const scheduled = new Date(timeVal).getTime();
+    if (scheduled <= Date.now()) { showToast('⚠ Must be in the future'); return; }
+
+    const reminder = { id: Date.now().toString(), title, note, emoji: selectedEmoji, scheduled, fired: false };
+    reminders.unshift(reminder);
+    save();
+    scheduleOne(reminder);
+    renderList();
+    showToast('✓ Reminder set');
+
+    document.getElementById('r-title').value = '';
+    document.getElementById('r-note').value = '';
+    const next = new Date(Date.now() + 10 * 60 * 1000);
+    next.setSeconds(0, 0);
+    document.getElementById('r-time').value = next.toISOString().slice(0, 16);
+  }
+
+  // ── Delete Reminder ───────────────────────────────────
+  function deleteReminder(id) {
+    clearTimeout(timers[id]);
+    delete timers[id];
+    reminders = reminders.filter(r => r.id !== id);
+    save();
+    renderList();
+    showToast('✕ Removed');
+  }
+
+  // ── Scheduling ─────────────────────────────────────────
+  function scheduleAll() { reminders.forEach(r => { if (!r.fired) scheduleOne(r); }); }
+
+  function scheduleOne(r) {
+    const delay = r.scheduled - Date.now();
+    if (delay <= 0 || delay > 2147483647) return;
+    timers[r.id] = setTimeout(() => fireNotification(r), delay);
+  }
+
+  function fireNotification(r) {
+    if (Notification.permission === 'granted') {
+      showNotification(r.emoji + ' ' + r.title, r.note || 'RemindMe');
+    }
+    const idx = reminders.findIndex(x => x.id === r.id);
+    if (idx > -1) { reminders[idx].fired = true; save(); renderList(); }
+  }
+
+  // ── Render & Countdown ────────────────────────────────
+  function renderList() {
+    const list = document.getElementById('reminder-list');
+    const upcoming = reminders.filter(r => !r.fired);
+    const fired = reminders.filter(r => r.fired);
+    const all = [...upcoming, ...fired];
+
+    document.getElementById('count-badge').textContent = upcoming.length;
+
+    if (all.length === 0) {
+      list.innerHTML = `<div class="empty-state"><div class="big-emoji">🕯️</div><p>No reminders yet.<br/>Add one above.</p></div>`;
+      return;
+    }
+
+    list.innerHTML = all.map(r => {
+      const d = new Date(r.scheduled);
+      const dateStr = d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
+      const timeStr = d.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
+      const countdown = r.fired ? '✓ done' : getCountdown(r.scheduled);
+
+      return `<div class="reminder-card ${r.fired ? 'fired' : ''}" id="card-${r.id}">
+        <div class="r-emoji">${r.emoji}</div>
+        <div class="r-body">
+          <div class="r-title">${escapeHtml(r.title)}</div>
+          ${r.note ? `<div class="r-note">${escapeHtml(r.note)}</div>` : ''}
+          <div class="r-time ${r.fired ? 'past' : ''}">
+            ${dateStr} · ${timeStr}
+            <span class="countdown">${countdown}</span>
+          </div>
+        </div>
+        <button class="delete-btn" onclick="deleteReminder('${r.id}')">✕</button>
+      </div>`;
+    }).join('');
+  }
+
+  function updateCountdowns() {
+    reminders.forEach(r => {
+      if (r.fired) return;
+      const span = document.querySelector(`#card-${r.id} .countdown`);
+      if (span) span.textContent = getCountdown(r.scheduled);
+    });
+  }
+
+  function getCountdown(ts) {
+    const diff = ts - Date.now();
+    if (diff <= 0) return 'now';
+    const m = Math.floor(diff / 60000);
+    const h = Math.floor(m / 60);
+    const d = Math.floor(h / 24);
+    if (d > 0) return `${d}d ${h % 24}h`;
+    if (h > 0) return `${h}h ${m % 60}m`;
+    return `${m}m`;
+  }
+
+  // ── Helpers ────────────────────────────────────────────
+  function save() { localStorage.setItem('reminders', JSON.stringify(reminders)); }
+  function escapeHtml(s) { return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+
+  function showToast(msg) {
+    const t = document.getElementById('toast');
+    t.textContent = msg;
+    t.classList.add('show');
+    setTimeout(() => t.classList.remove('show'), 2600);
   }
 </script>
-<button onclick="testNotification()">Test Notification</button>
+</body>
+</html>
